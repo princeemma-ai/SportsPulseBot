@@ -3,6 +3,17 @@ const Parser = require('rss-parser');
 const cron = require('node-cron');
 require('dotenv').config();
 
+// Validate required environment variables
+if (!process.env.BOT_TOKEN) {
+  console.error('ERROR: BOT_TOKEN environment variable is not set');
+  process.exit(1);
+}
+
+if (!process.env.CHANNEL_ID) {
+  console.error('ERROR: CHANNEL_ID environment variable is not set');
+  process.exit(1);
+}
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const parser = new Parser();
 const CHANNEL_ID = process.env.CHANNEL_ID;
@@ -37,28 +48,56 @@ function formatPost(items) {
 }
 
 async function postDaily() {
-  const headlines = await fetchHeadlines();
-  if (headlines.length === 0) {
-    console.log('No headlines fetched — skipping today.');
-    return;
+  try {
+    const headlines = await fetchHeadlines();
+    if (headlines.length === 0) {
+      console.log('No headlines fetched — skipping today.');
+      return;
+    }
+    const message = formatPost(headlines);
+    await bot.telegram.sendMessage(CHANNEL_ID, message, { disable_web_page_preview: false });
+    console.log('Posted daily sports digest.');
+  } catch (err) {
+    console.error('Error posting daily digest:', err.message);
   }
-  const message = formatPost(headlines);
-  await bot.telegram.sendMessage(CHANNEL_ID, message, { disable_web_page_preview: false });
-  console.log('Posted daily sports digest.');
 }
 
 // Schedule: runs once a day at POST_HOUR_UTC
 const hour = process.env.POST_HOUR_UTC || '8';
+console.log(`Scheduled daily post at ${hour}:00 UTC`);
 cron.schedule(`0 ${hour} * * *`, postDaily);
 
 // Optional: manual trigger command for testing (message the bot directly, not the channel)
 bot.command('postnow', async (ctx) => {
-  await postDaily();
-  ctx.reply('Posted to channel.');
+  try {
+    await postDaily();
+    ctx.reply('Posted to channel.');
+  } catch (err) {
+    ctx.reply(`Error: ${err.message}`);
+  }
 });
 
-bot.launch();
-console.log('Sports Daily bot is running.');
+// Start the bot with error handling
+async function startBot() {
+  try {
+    console.log('Starting Sports Daily bot...');
+    await bot.launch();
+    console.log('Sports Daily bot is running.');
+  } catch (err) {
+    console.error('Failed to start bot:', err.message);
+    console.error('Check your BOT_TOKEN and ensure the bot is valid.');
+    process.exit(1);
+  }
+}
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+startBot();
+
+process.once('SIGINT', () => {
+  console.log('Shutting down...');
+  bot.stop('SIGINT');
+});
+process.once('SIGTERM', () => {
+  console.log('Shutting down...');
+  bot.stop('SIGTERM');
+});
+
