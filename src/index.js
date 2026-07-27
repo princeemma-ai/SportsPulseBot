@@ -18,14 +18,13 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const parser = new Parser();
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-// Free, no-key-needed sports RSS feeds — mix a couple for variety
+// Free, no-key-needed sports RSS feeds
 const FEEDS = [
   'https://www.espn.com/espn/rss/news',
   'https://feeds.bbci.co.uk/sport/rss.xml'
 ];
 
-async function fetchHeadlines(limit = 5) {
-  const items = [];
+async function fetchHeadlines(limit = 5) {\n  const items = [];
   for (const url of FEEDS) {
     try {
       const feed = await parser.parseURL(url);
@@ -34,7 +33,6 @@ async function fetchHeadlines(limit = 5) {
       console.error(`Failed to fetch ${url}:`, err.message);
     }
   }
-  // Shuffle and trim so it's not always the same source first
   return items.sort(() => Math.random() - 0.5).slice(0, limit);
 }
 
@@ -52,57 +50,61 @@ async function postDaily() {
   try {
     const headlines = await fetchHeadlines();
     if (headlines.length === 0) {
-      console.log('No headlines fetched — skipping post.');
+      console.log(`[${new Date().toISOString()}] No headlines fetched — skipping post.`);
       return;
     }
     const message = formatPost(headlines);
     await bot.telegram.sendMessage(CHANNEL_ID, message, { disable_web_page_preview: false });
-    console.log(`Posted sports digest at ${new Date().toISOString()}`);
+    console.log(`[${new Date().toISOString()}] ✅ Posted sports digest to channel`);
   } catch (err) {
-    console.error('Error posting digest:', err.message);
+    console.error(`[${new Date().toISOString()}] ❌ Error posting digest:`, err.message);
   }
 }
 
-// Start the bot with error handling
 async function startBot() {
+  console.log(`[${new Date().toISOString()}] 🤖 SportsPulseBot starting...`);
+  
   try {
-    console.log('Starting Sports Daily bot...');
-    await bot.launch();
-    console.log('Sports Daily bot is running.');
-    
-    // Post immediately on startup
-    console.log('Posting first digest now...');
-    await postDaily();
-    
-    // Then schedule posts every 25 minutes
-    console.log('Scheduling posts every 25 minutes...');
-    cron.schedule('*/25 * * * *', postDaily);
-    
+    // Test the bot token by calling getMe
+    const me = await bot.telegram.getMe();
+    console.log(`[${new Date().toISOString()}] ✅ Bot authenticated as @${me.username}`);
   } catch (err) {
-    console.error('Failed to start bot:', err.message);
-    console.error('Check your BOT_TOKEN and ensure the bot is valid.');
+    console.error(`[${new Date().toISOString()}] ❌ Bot authentication failed:`, err.message);
     process.exit(1);
   }
+
+  // Post immediately on startup
+  console.log(`[${new Date().toISOString()}] 📤 Posting first digest now...`);
+  await postDaily();
+
+  // Schedule posts every 25 minutes
+  console.log(`[${new Date().toISOString()}] ⏰ Scheduling posts every 25 minutes...`);
+  cron.schedule('*/25 * * * *', postDaily);
+
+  // Optional: handle /postnow command if someone messages the bot
+  bot.command('postnow', async (ctx) => {
+    console.log(`[${new Date().toISOString()}] 📱 /postnow command received`);
+    try {
+      await postDaily();
+      ctx.reply('✅ Posted to channel.');
+    } catch (err) {
+      ctx.reply(`❌ Error: ${err.message}`);
+    }
+  });
+
+  console.log(`[${new Date().toISOString()}] ✅ Bot is ready and running!\n`);
 }
 
 startBot();
 
-// Optional: manual trigger command for testing (message the bot directly, not the channel)
-bot.command('postnow', async (ctx) => {
-  try {
-    await postDaily();
-    ctx.reply('Posted to channel.');
-  } catch (err) {
-    ctx.reply(`Error: ${err.message}`);
-  }
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log(`\n[${new Date().toISOString()}] 🛑 Shutting down...`);
+  process.exit(0);
 });
 
-process.once('SIGINT', () => {
-  console.log('Shutting down...');
-  bot.stop('SIGINT');
-});
-process.once('SIGTERM', () => {
-  console.log('Shutting down...');
-  bot.stop('SIGTERM');
+process.on('SIGTERM', () => {
+  console.log(`\n[${new Date().toISOString()}] 🛑 Shutting down...`);
+  process.exit(0);
 });
 
