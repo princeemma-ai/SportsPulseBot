@@ -57,35 +57,11 @@ async function postDaily() {
     }
     const message = formatPost(headlines);
     await bot.telegram.sendMessage(CHANNEL_ID, message, { disable_web_page_preview: false });
-    console.log(`Posted sports digest at ${new Date().toISOString()}`);
+    console.log(`[${new Date().toISOString()}] Posted sports digest`);
   } catch (err) {
-    console.error('Error posting digest:', err.message);
+    console.error(`[${new Date().toISOString()}] Error posting digest:`, err.message);
   }
 }
-
-// Start the bot with error handling
-async function startBot() {
-  try {
-    console.log('Starting Sports Daily bot...');
-    await bot.launch();
-    console.log('Sports Daily bot is running.');
-    
-    // Post immediately on startup
-    console.log('Posting first digest now...');
-    await postDaily();
-    
-    // Then schedule posts every 25 minutes
-    console.log('Scheduling posts every 25 minutes...');
-    cron.schedule('*/25 * * * *', postDaily);
-    
-  } catch (err) {
-    console.error('Failed to start bot:', err.message);
-    console.error('Check your BOT_TOKEN and ensure the bot is valid.');
-    process.exit(1);
-  }
-}
-
-startBot();
 
 // Optional: manual trigger command for testing (message the bot directly, not the channel)
 bot.command('postnow', async (ctx) => {
@@ -97,12 +73,54 @@ bot.command('postnow', async (ctx) => {
   }
 });
 
+// Start the bot with error handling
+async function startBot() {
+  try {
+    console.log(`[${new Date().toISOString()}] Starting Sports Daily bot...`);
+    
+    // Set up graceful error handling for polling
+    bot.catch((err, ctx) => {
+      console.error(`[${new Date().toISOString()}] Bot error:`, err);
+    });
+    
+    // Launch with polling, but stop gracefully on error
+    await bot.launch();
+    console.log(`[${new Date().toISOString()}] Bot is running. Setting up posting schedule...`);
+    
+    // Post immediately on startup
+    console.log(`[${new Date().toISOString()}] Posting first digest now...`);
+    await postDaily();
+    
+    // Then schedule posts every 25 minutes
+    console.log(`[${new Date().toISOString()}] Scheduling posts every 25 minutes...`);
+    cron.schedule('*/25 * * * *', postDaily);
+    
+    console.log(`[${new Date().toISOString()}] ✅ Bot fully initialized and posting`);
+    
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Failed to start bot:`, err.message);
+    console.error('Check your BOT_TOKEN and CHANNEL_ID.');
+    
+    // Wait 5 seconds before retrying
+    console.log('Retrying in 5 seconds...');
+    setTimeout(() => {
+      process.exit(1);
+    }, 5000);
+  }
+}
+
+startBot();
+
+// Graceful shutdown
 process.once('SIGINT', () => {
-  console.log('Shutting down...');
+  console.log(`[${new Date().toISOString()}] SIGINT received, shutting down...`);
   bot.stop('SIGINT');
+  process.exit(0);
 });
+
 process.once('SIGTERM', () => {
-  console.log('Shutting down...');
+  console.log(`[${new Date().toISOString()}] SIGTERM received, shutting down...`);
   bot.stop('SIGTERM');
+  process.exit(0);
 });
 
