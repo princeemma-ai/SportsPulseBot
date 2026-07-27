@@ -3,6 +3,17 @@ const Parser = require('rss-parser');
 const cron = require('node-cron');
 require('dotenv').config();
 
+// Validate required environment variables
+if (!process.env.BOT_TOKEN) {
+  console.error('ERROR: BOT_TOKEN environment variable is not set');
+  process.exit(1);
+}
+
+if (!process.env.CHANNEL_ID) {
+  console.error('ERROR: CHANNEL_ID environment variable is not set');
+  process.exit(1);
+}
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const parser = new Parser();
 const CHANNEL_ID = process.env.CHANNEL_ID;
@@ -29,7 +40,8 @@ async function fetchHeadlines(limit = 5) {
 
 function formatPost(items) {
   const date = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  let text = `🏆 Sports Daily — ${date}\n\n`;
+  const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' });
+  let text = `🏆 Sports Daily — ${date} (${time} UTC)\n\n`;
   items.forEach((item, i) => {
     text += `${i + 1}. ${item.title}\n${item.link}\n\n`;
   });
@@ -37,28 +49,60 @@ function formatPost(items) {
 }
 
 async function postDaily() {
-  const headlines = await fetchHeadlines();
-  if (headlines.length === 0) {
-    console.log('No headlines fetched — skipping today.');
-    return;
+  try {
+    const headlines = await fetchHeadlines();
+    if (headlines.length === 0) {
+      console.log('No headlines fetched — skipping post.');
+      return;
+    }
+    const message = formatPost(headlines);
+    await bot.telegram.sendMessage(CHANNEL_ID, message, { disable_web_page_preview: false });
+    console.log(`Posted sports digest at ${new Date().toISOString()}`);
+  } catch (err) {
+    console.error('Error posting digest:', err.message);
   }
-  const message = formatPost(headlines);
-  await bot.telegram.sendMessage(CHANNEL_ID, message, { disable_web_page_preview: false });
-  console.log('Posted daily sports digest.');
 }
 
-// Schedule: runs once a day at POST_HOUR_UTC
-const hour = process.env.POST_HOUR_UTC || '8';
-cron.schedule(`0 ${hour} * * *`, postDaily);
+// Start the bot with error handling
+async function startBot() {
+  try {
+    console.log('Starting Sports Daily bot...');
+    await bot.launch();
+    console.log('Sports Daily bot is running.');
+    
+    // Post immediately on startup
+    console.log('Posting first digest now...');
+    await postDaily();
+    
+    // Then schedule posts every 25 minutes
+    console.log('Scheduling posts every 25 minutes...');
+    cron.schedule('*/25 * * * *', postDaily);
+    
+  } catch (err) {
+    console.error('Failed to start bot:', err.message);
+    console.error('Check your BOT_TOKEN and ensure the bot is valid.');
+    process.exit(1);
+  }
+}
+
+startBot();
 
 // Optional: manual trigger command for testing (message the bot directly, not the channel)
 bot.command('postnow', async (ctx) => {
-  await postDaily();
-  ctx.reply('Posted to channel.');
+  try {
+    await postDaily();
+    ctx.reply('Posted to channel.');
+  } catch (err) {
+    ctx.reply(`Error: ${err.message}`);
+  }
 });
 
-bot.launch();
-console.log('Sports Daily bot is running.');
+process.once('SIGINT', () => {
+  console.log('Shutting down...');
+  bot.stop('SIGINT');
+});
+process.once('SIGTERM', () => {
+  console.log('Shutting down...');
+  bot.stop('SIGTERM');
+});
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
