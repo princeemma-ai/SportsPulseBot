@@ -1,0 +1,4 @@
+mkdir sports-daily-bot && cd sports-daily-bot
+git init
+npm init -y
+npm install telegraf rss-parser node-cron dotenv
